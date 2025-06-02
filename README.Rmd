@@ -2,19 +2,29 @@
 title: "Midterm Project"
 author: "Ravi Brenner, Cameron Chesbrough, Wayne Monical"
 date: "2025-03-25"
-output: pdf_document
+output: github_document
 ---
-Introduction
+
+# Introduction
+
 An initial study was conducted to measure the antibody response to a new vaccine. A variety of descriptive information was collected alongside this data, and the project was replicated on a new sample of participants a few months later. To better understand the impact of demographic and clinical characteristics on antibody response, a model can be constructed to evaluate and make predictions on future vaccine testing. Different models may be built using the data from the first study, compared to each other so that the best fit may be found, and validated using the data from the second study. 
-Exploratory analysis
+
+# Exploratory analysis
+
 Beginning with the first dataset, there are no missing values. The log-transformed antibody level also appears to be normally distributed. White participants make up 64% of the data and non-smokers make up 60%. There is some correlation between blood pressure and age; unsurprisingly there is also correlation between bmi, weight, and height. Antibody response does not appear to vary substantially by demographic variables. Females have slightly higher average antibody responses than males, but the difference is small. The relationship between antibody response and time appears to be nonlinear, with log antibody increasing initially and then decreasing over time. Antibody levels also decrease with increasing BMI.
-Model training
+
+# Model training
+
 For all models, we used 10-fold cross validation to compute the root mean standard error (RMSE) with the caret package in R. By ensuring the same random split for each model, we can compare RMSE values across models and choose the model with the lowest average training error. When training models with variable tuning parameters, we also used cross validation to select the tuning parameter across a range of values that achieved the lowest error for that type of model.
+
 All predictors were used for each model fit with log antibody as the response variable. For the first model we fit a standard least squares linear regression model. This model treats the relationship between the predictors and response as strictly linear and fits a coefficient for each predictor as well as an overall intercept to minimize the residual sum of squares. This makes the model simple to interpret, but potentially at the expense of prediction accuracy. 
+
 For the second model we fit an elastic net regression. This  model builds off the least squares linear regression model and adds two penalty terms. These penalty terms regularize, or shrink, the coefficients from the linear part of the model. One of these penalty terms comes from ridge regression which minimizes the sum of the squared coefficients;the other penalty term comes from lasso regression which minimizes the sum of the absolute values of the coefficients. The lasso penalty allows coefficients to be shrunk down all the way to zero, removing variables from the model altogether. The elastic net procedure balances the weight between these two penalty terms to optimize prediction accuracy. To construct our elastic net we used a range of 21 incrementally increasing alpha values from 0 to 1 (0, 0.05, 010…), and a range of 100 incrementally decreasing lambda values from e6 to e-10.
 For the third model we fit a generalized additive model, or GAM. GAMs allow for nonlinear relationships between predictors and response variables; they have a similar overall structure to linear regression models. The GAM procedure in R automatically models these linear and nonlinear relationships and selects (via cross validation) the model that most accurately predicts the outcome variable.
+
 For the fourth model we fit a multivariate adaptive regression splines, or MARS model. This type of model constructs multiple hinge functions (or products of hinge functions), for the set of predictors in an automated way to best predict the outcome variable. The two tuning parameters are the degree of features and the number of terms.The optimal combination of these tuning parameters is selected via cross validation. To construct our MARS model we tested product degrees of 1, 2, and 3 and a range of pruning terms from 2 to 15.
-Results
+
+# Results
 The average cross-validated RMSE of the linear, elastic net, GAM, and MARS models were 0.551, 0.551, 0.529, and 0.528 respectively. The models were fit using cross validation to select tuning parameters where applicable. The model with the lowest RMSE on the initial dataset was the MARS model. When we used this model to make predictions using the new dataset, the RMSE increased to 0.533. This model performs slightly worse on the new out of sample data, but this value is inside the range of cross-validated training error observed during resampling. The model has generalized well likely because the new data and the old data were drawn from similar populations. This model could reasonably be used for making future predictions about antibody levels, given similar data. The application of this model could allow researchers to predict the expected antibody level for a patient given their demographic and clinical measurements, which may be helpful for medical professionals designing vaccines and administering vaccinations.
 
 
