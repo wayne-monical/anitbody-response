@@ -1,0 +1,325 @@
+---
+title: "Midterm Project"
+author: "Ravi Brenner, Cameron Chesbrough, Wayne Monical"
+date: "2025-03-25"
+output: pdf_document
+---
+Introduction
+An initial study was conducted to measure the antibody response to a new vaccine. A variety of descriptive information was collected alongside this data, and the project was replicated on a new sample of participants a few months later. To better understand the impact of demographic and clinical characteristics on antibody response, a model can be constructed to evaluate and make predictions on future vaccine testing. Different models may be built using the data from the first study, compared to each other so that the best fit may be found, and validated using the data from the second study. 
+Exploratory analysis
+Beginning with the first dataset, there are no missing values. The log-transformed antibody level also appears to be normally distributed. White participants make up 64% of the data and non-smokers make up 60%. There is some correlation between blood pressure and age; unsurprisingly there is also correlation between bmi, weight, and height. Antibody response does not appear to vary substantially by demographic variables. Females have slightly higher average antibody responses than males, but the difference is small. The relationship between antibody response and time appears to be nonlinear, with log antibody increasing initially and then decreasing over time. Antibody levels also decrease with increasing BMI.
+Model training
+For all models, we used 10-fold cross validation to compute the root mean standard error (RMSE) with the caret package in R. By ensuring the same random split for each model, we can compare RMSE values across models and choose the model with the lowest average training error. When training models with variable tuning parameters, we also used cross validation to select the tuning parameter across a range of values that achieved the lowest error for that type of model.
+All predictors were used for each model fit with log antibody as the response variable. For the first model we fit a standard least squares linear regression model. This model treats the relationship between the predictors and response as strictly linear and fits a coefficient for each predictor as well as an overall intercept to minimize the residual sum of squares. This makes the model simple to interpret, but potentially at the expense of prediction accuracy. 
+For the second model we fit an elastic net regression. This  model builds off the least squares linear regression model and adds two penalty terms. These penalty terms regularize, or shrink, the coefficients from the linear part of the model. One of these penalty terms comes from ridge regression which minimizes the sum of the squared coefficients;the other penalty term comes from lasso regression which minimizes the sum of the absolute values of the coefficients. The lasso penalty allows coefficients to be shrunk down all the way to zero, removing variables from the model altogether. The elastic net procedure balances the weight between these two penalty terms to optimize prediction accuracy. To construct our elastic net we used a range of 21 incrementally increasing alpha values from 0 to 1 (0, 0.05, 010…), and a range of 100 incrementally decreasing lambda values from e6 to e-10.
+For the third model we fit a generalized additive model, or GAM. GAMs allow for nonlinear relationships between predictors and response variables; they have a similar overall structure to linear regression models. The GAM procedure in R automatically models these linear and nonlinear relationships and selects (via cross validation) the model that most accurately predicts the outcome variable.
+For the fourth model we fit a multivariate adaptive regression splines, or MARS model. This type of model constructs multiple hinge functions (or products of hinge functions), for the set of predictors in an automated way to best predict the outcome variable. The two tuning parameters are the degree of features and the number of terms.The optimal combination of these tuning parameters is selected via cross validation. To construct our MARS model we tested product degrees of 1, 2, and 3 and a range of pruning terms from 2 to 15.
+Results
+The average cross-validated RMSE of the linear, elastic net, GAM, and MARS models were 0.551, 0.551, 0.529, and 0.528 respectively. The models were fit using cross validation to select tuning parameters where applicable. The model with the lowest RMSE on the initial dataset was the MARS model. When we used this model to make predictions using the new dataset, the RMSE increased to 0.533. This model performs slightly worse on the new out of sample data, but this value is inside the range of cross-validated training error observed during resampling. The model has generalized well likely because the new data and the old data were drawn from similar populations. This model could reasonably be used for making future predictions about antibody levels, given similar data. The application of this model could allow researchers to predict the expected antibody level for a patient given their demographic and clinical measurements, which may be helpful for medical professionals designing vaccines and administering vaccinations.
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Library Load
+```{r}
+library(caret)
+library(tidymodels)
+library(vtable)
+library(corrplot)
+library(patchwork)
+library(splines)
+library(mgcv)
+library(pdp)
+library(earth)
+library(tidyverse)
+library(ggplot2)
+library(glmnet)
+```
+
+Loading data
+```{r}
+load("../dat1.RData")
+load("../dat2.RData")
+```
+
+## Exploratory Data Analysis
+
+Go from labels to variable names
+```{r}
+dat1 <- dat1 |>
+  mutate(gender = factor(gender, levels = c(0,1),
+                         labels = c("Female","Male")),
+         race = factor(race, levels = c(1,2,3,4),
+                       labels = c("White","Asian","Black","Hispanic")),
+         smoking = factor(smoking, levels = c(0,1,2),
+                          labels = c("Never smoked","Former smoker","Current smoker")),
+         diabetes = factor(diabetes, levels = c(0,1),
+                           labels = c("No","Yes")),
+         hypertension = factor(hypertension, levels = c(0,1),
+                               labels = c("No","Yes")),
+         ) |>
+  dplyr::select(-id)
+
+dat2 <- dat2 |>
+  mutate(gender = factor(gender, levels = c(0,1),
+                         labels = c("Female","Male")),
+         race = factor(race, levels = c(1,2,3,4),
+                       labels = c("White","Asian","Black","Hispanic")),
+         smoking = factor(smoking, levels = c(0,1,2),
+                          labels = c("Never smoked","Former smoker","Current smoker")),
+         diabetes = factor(diabetes, levels = c(0,1),
+                           labels = c("No","Yes")),
+         hypertension = factor(hypertension, levels = c(0,1),
+                               labels = c("No","Yes")),
+         ) |>
+  dplyr::select(-id)
+```
+
+Use featureplot from caret to plot the training data
+```{r}
+theme1 <- trellis.par.get()
+theme1$plot.symbol$col = rgb(.2, .2, .2, .4)
+theme1$plot.symbol$pch = 16
+theme1$plot.line$col = rgb(1, 0, 0, .7)
+theme1$plot.line$lwd <- 2
+trellis.par.set(theme1)
+
+featurePlot(x = dat1 |> dplyr::select(-log_antibody,
+                                      -where(is.factor)),
+            y = dat1$log_antibody,
+            type = c("p","smooth"))
+
+dat1 |> 
+  dplyr::select(log_antibody,gender,race, smoking,diabetes, hypertension) |>
+  pivot_longer(cols = 2:6,
+               names_to = "variable",
+               values_to = "value") |>
+  ggplot(aes(x = value, y = log_antibody)) + 
+  geom_boxplot() +
+  facet_wrap(.~variable,scales = "free_x")
+```
+
+```{r}
+
+antibody_hist = hist(dat1$log_antibody)
+antibody_scatter = plot(x = dat1$time, y = dat1$log_antibody)
+summ_table = sumtable(dat1, out = 'return')
+continuous = dat1[c(1,5:7,10:12)]
+correlations = cor(continuous)
+corr_plot = corrplot(correlations)
+
+report_table = sumtable(dat1, out = 'kable')
+report_table
+
+
+```
+
+Looking at the second dataset
+```{r}
+antibody_hist = hist(dat1$log_antibody)
+antibody_hist_data2 = hist(dat2$log_antibody)
+
+summ_table_data2 = sumtable(dat2, out = 'return')
+```
+
+
+## Model Training
+
+Creating the design Matrix
+```{r}
+load('dat1.RData')
+
+design_matrix = 
+  dat1 |>
+  mutate(
+    race_asian = as.numeric(race == 2),
+    race_black = as.numeric(race == 3),
+    race_hispanic = as.numeric(race == 4),
+    smoking_former = as.numeric(smoking == 1),
+    smoking_current = as.numeric(smoking ==2)
+  ) %>% 
+  select(
+    age, gender, race_asian, race_black, race_hispanic, 
+    smoking_former, smoking_current, height, weight,
+    bmi, diabetes, hypertension, SBP, LDL, time, 
+    log_antibody
+  )
+```
+  
+Specify X and Y for model training
+```{r}
+y = design_matrix$log_antibody
+x = select(design_matrix, -log_antibody) %>% 
+  as.matrix()
+```
+
+Specify CV Procedure
+```{r}
+ctrl <- trainControl(method = "cv", number = 10)
+```
+
+Linear Regression
+```{r}
+set.seed(1)
+model.linear =
+  train(x = x,
+        y = y,
+        method = "lm", 
+        metric = "RMSE",
+        trControl = ctrl)
+
+hist(model.linear$resample$RMSE)
+```
+
+```{r}
+coef(model.linear$finalModel)
+```
+
+
+Elastic Net
+```{r}
+set.seed(1)
+model.elastic_net =
+  train(x = x,
+        y = y,
+        method = "glmnet", 
+        metric = "RMSE",
+        trControl = ctrl,
+        tuneGrid = expand.grid(.alpha = seq(0,1, length = 21),
+                               .lambda = exp(seq(6,-10, length = 100))))
+
+hist(model.elastic_net$resample$RMSE)
+```
+
+
+```{r}
+plot(model.elastic_net, xTrans = log)
+```
+
+
+
+GAM
+```{r}
+set.seed(1)
+model.gam =
+  train(x = x,
+        y = y,
+        method = "gam", 
+        metric = "RMSE",
+        trControl = ctrl)
+```
+
+```{r}
+plot(model.gam)
+```
+
+
+MARS
+```{r}
+mars_grid = 
+  expand.grid(degree = 1:3,
+              nprune = 2:15)
+
+set.seed(1)
+model.mars = 
+  train(x, y,
+        method = "earth",
+        tuneGrid = mars_grid,
+        trControl = ctrl)
+
+ggplot(model.mars) + 
+  labs('MARS Model Evaluation')
+```
+
+
+## Comparing Cross Validated RMSE
+
+```{r}
+model.RMSE= 
+  rbind(
+  data.frame(
+    model = 'Linear',
+    RMSE = model.linear$resample$RMSE
+  ),
+  data.frame(
+    model = 'Elastic Net',
+    RMSE = model.elastic_net$resample$RMSE),
+  data.frame(
+    model = 'GAM',
+    RMSE = model.gam$resample$RMSE
+  ),
+  data.frame(
+    model = 'MARS',
+    RMSE = model.mars$resample$RMSE
+  )
+)
+```
+
+
+```{r}
+model.RMSE %>% 
+  group_by(model) %>% 
+  summarize(mean(RMSE))
+```
+
+
+```{r}
+
+model.RMSE |>
+  ggplot(aes(x = model, y = RMSE)) +
+  geom_violin()+
+  stat_summary(
+    fun = "mean",
+               geom = "point",
+               color = "red")+
+  labs(title = "Model RMSE Comparison", xlab = "Model")
+```
+
+
+## Model Evaluation
+
+Clean new data set
+```{r}
+load('dat2.RData')
+
+design_matrix2 = 
+  dat2 |>
+  mutate(
+    race_asian = as.numeric(race == 2),
+    race_black = as.numeric(race == 3),
+    race_hispanic = as.numeric(race == 4),
+    smoking_former = as.numeric(smoking == 1),
+    smoking_current = as.numeric(smoking ==2)
+  ) %>% 
+  select(
+    age, gender, race_asian, race_black, race_hispanic, 
+    smoking_former, smoking_current, height, weight,
+    bmi, diabetes, hypertension, SBP, LDL, time, 
+    log_antibody
+  )
+
+x2 = as.matrix(dplyr::select(design_matrix2, -log_antibody))
+y2 = design_matrix2$log_antibody
+```
+
+
+```{r}
+head(x)
+```
+
+```{r}
+head(x2)
+```
+
+
+Make predictions using MARS model and get test set RMSE
+```{r}
+pred = predict(model.mars, x2)
+
+dat2_rmse = sqrt(mean((pred - y2)^2))
+
+dat2_rmse
+```
