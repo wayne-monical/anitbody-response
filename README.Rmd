@@ -1,19 +1,19 @@
 ---
-title: "Midterm Project"
+title: "Immune Response Analysis"
 author: "Ravi Brenner, Cameron Chesbrough, Wayne Monical"
 date: "2025-03-25"
 output: github_document
 ---
 
-# Introduction
+## Introduction
 
-An initial study was conducted to measure the antibody response to a new vaccine. A variety of descriptive information was collected alongside this data, and the project was replicated on a new sample of participants a few months later. To better understand the impact of demographic and clinical characteristics on antibody response, a model can be constructed to evaluate and make predictions on future vaccine testing. Different models may be built using the data from the first study, compared to each other so that the best fit may be found, and validated using the data from the second study. 
+This report was originally written as part of Columbia Mailman's Data Science for machine learning class. A study was conducted to measure the antibody response to a new vaccine. A variety of descriptive information was collected alongside this data, and the project was replicated on a new sample of participants a few months later. To better understand the impact of demographic and clinical characteristics on antibody response, a model can be constructed to evaluate and make predictions on future vaccine testing. Different models may be built using the data from the first study, compared to each other so that the best fit may be found, and validated using the data from the second study. 
 
-# Exploratory analysis
+## Exploratory analysis
 
 Beginning with the first dataset, there are no missing values. The log-transformed antibody level also appears to be normally distributed. White participants make up 64% of the data and non-smokers make up 60%. There is some correlation between blood pressure and age; unsurprisingly there is also correlation between bmi, weight, and height. Antibody response does not appear to vary substantially by demographic variables. Females have slightly higher average antibody responses than males, but the difference is small. The relationship between antibody response and time appears to be nonlinear, with log antibody increasing initially and then decreasing over time. Antibody levels also decrease with increasing BMI.
 
-# Model training
+## Model training
 
 For all models, we used 10-fold cross validation to compute the root mean standard error (RMSE) with the caret package in R. By ensuring the same random split for each model, we can compare RMSE values across models and choose the model with the lowest average training error. When training models with variable tuning parameters, we also used cross validation to select the tuning parameter across a range of values that achieved the lowest error for that type of model.
 
@@ -24,7 +24,7 @@ For the third model we fit a generalized additive model, or GAM. GAMs allow for 
 
 For the fourth model we fit a multivariate adaptive regression splines, or MARS model. This type of model constructs multiple hinge functions (or products of hinge functions), for the set of predictors in an automated way to best predict the outcome variable. The two tuning parameters are the degree of features and the number of terms.The optimal combination of these tuning parameters is selected via cross validation. To construct our MARS model we tested product degrees of 1, 2, and 3 and a range of pruning terms from 2 to 15.
 
-# Results
+## Results
 The average cross-validated RMSE of the linear, elastic net, GAM, and MARS models were 0.551, 0.551, 0.529, and 0.528 respectively. The models were fit using cross validation to select tuning parameters where applicable. The model with the lowest RMSE on the initial dataset was the MARS model. When we used this model to make predictions using the new dataset, the RMSE increased to 0.533. This model performs slightly worse on the new out of sample data, but this value is inside the range of cross-validated training error observed during resampling. The model has generalized well likely because the new data and the old data were drawn from similar populations. This model could reasonably be used for making future predictions about antibody levels, given similar data. The application of this model could allow researchers to predict the expected antibody level for a patient given their demographic and clinical measurements, which may be helpful for medical professionals designing vaccines and administering vaccinations.
 
 
@@ -33,8 +33,8 @@ The average cross-validated RMSE of the linear, elastic net, GAM, and MARS model
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-Library Load
-```{r}
+### Library Load
+```{r, message=FALSE, warning=FALSE}
 library(caret)
 library(tidymodels)
 library(vtable)
@@ -49,7 +49,7 @@ library(ggplot2)
 library(glmnet)
 ```
 
-Loading data
+### Loading data
 ```{r}
 load("../dat1.RData")
 load("../dat2.RData")
@@ -57,7 +57,7 @@ load("../dat2.RData")
 
 ## Exploratory Data Analysis
 
-Go from labels to variable names
+Variable Transformation
 ```{r}
 dat1 <- dat1 |>
   mutate(gender = factor(gender, levels = c(0,1),
@@ -88,7 +88,7 @@ dat2 <- dat2 |>
   dplyr::select(-id)
 ```
 
-Use featureplot from caret to plot the training data
+### Plotting 
 ```{r}
 theme1 <- trellis.par.get()
 theme1$plot.symbol$col = rgb(.2, .2, .2, .4)
@@ -113,7 +113,6 @@ dat1 |>
 ```
 
 ```{r}
-
 antibody_hist = hist(dat1$log_antibody)
 antibody_scatter = plot(x = dat1$time, y = dat1$log_antibody)
 summ_table = sumtable(dat1, out = 'return')
@@ -123,11 +122,9 @@ corr_plot = corrplot(correlations)
 
 report_table = sumtable(dat1, out = 'kable')
 report_table
-
-
 ```
 
-Looking at the second dataset
+### The Second Dataset
 ```{r}
 antibody_hist = hist(dat1$log_antibody)
 antibody_hist_data2 = hist(dat2$log_antibody)
@@ -139,8 +136,8 @@ summ_table_data2 = sumtable(dat2, out = 'return')
 ## Model Training
 
 Creating the design Matrix
-```{r}
-load('dat1.RData')
+```{r, warning=FALSE}
+load('../dat1.RData')
 
 design_matrix = 
   dat1 |>
@@ -211,7 +208,7 @@ plot(model.elastic_net, xTrans = log)
 
 
 
-GAM
+### GAM
 ```{r}
 set.seed(1)
 model.gam =
@@ -227,7 +224,7 @@ plot(model.gam)
 ```
 
 
-MARS
+### MARS
 ```{r}
 mars_grid = 
   expand.grid(degree = 1:3,
@@ -291,9 +288,9 @@ model.RMSE |>
 
 ## Model Evaluation
 
-Clean new data set
+Cleaning the new data set
 ```{r}
-load('dat2.RData')
+load('../dat2.RData')
 
 design_matrix2 = 
   dat2 |>
@@ -316,16 +313,7 @@ y2 = design_matrix2$log_antibody
 ```
 
 
-```{r}
-head(x)
-```
-
-```{r}
-head(x2)
-```
-
-
-Make predictions using MARS model and get test set RMSE
+Making predictions using MARS model and get test set RMSE
 ```{r}
 pred = predict(model.mars, x2)
 
